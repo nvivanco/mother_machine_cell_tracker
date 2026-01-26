@@ -71,11 +71,23 @@ def segment_image(image,
 
     # 1. Thresholding and Initial Morphological Operations
     try:
+
+        image = image.astype(np.float32)
+        image = (image - np.percentile(image, 1)) / (
+            np.percentile(image, 99) - np.percentile(image, 1)
+        )
+        image = np.clip(image, 0, 1)
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             thresh = filters.threshold_otsu(image)
         thresholded = image > OTSU_threshold * thresh
-        morph = morphology.binary_opening(thresholded, morphology.disk(first_opening))
+        
+        
+        # morph = morphology.binary_opening(thresholded, morphology.disk(first_opening))
+        diagonal_footprint = np.zeros((first_opening, first_opening))
+        np.fill_diagonal(diagonal_footprint, 1)
+        morph = morphology.binary_opening(thresholded, diagonal_footprint)
 
         if np.amax(morph) == 0:
             return np.zeros_like(image)
