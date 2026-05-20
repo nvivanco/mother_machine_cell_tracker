@@ -195,12 +195,12 @@ def _plot_cell_masks(ax, full_region_df, kymograph_shape, y_coord_col='centroid-
 
     # Plot all cell contours at once using LineCollection
     if all_contours_segments:  # Only plot if there are segments to draw
-        line_collection = LineCollection(all_contours_segments, colors=all_contour_colors, linewidths=0.5)
+        line_collection = LineCollection(all_contours_segments, colors=all_contour_colors, linewidths=10.0)
         ax.add_collection(line_collection)
 
     # Plot all centroids at once using scatter
     if centroid_x_coords:  # Only plot if there are centroids
-        ax.scatter(centroid_x_coords, centroid_y_coords, color=centroid_colors, s=5, zorder=2)
+        ax.scatter(centroid_x_coords, centroid_y_coords, color=centroid_colors, s=20, zorder=2)
 
 # Helper functions for plotting
 

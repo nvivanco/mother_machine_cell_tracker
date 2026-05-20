@@ -37,7 +37,8 @@ def get_tiff_frame_count(file_path):
 def run_cell_segmentation(base_dir, exp_dict_json, start_frame, end_frame,
 						  phase_c_str, otsu_thresh,
 						  first_open, dist_thresh, second_open_size,
-						  min_area, max_area, small_merge_thresh):
+						  min_area, max_area, small_merge_thresh,
+						  first_opening_morph=None, second_opening_morph=None):
 	"""
 	Performs cell segmentation on multiple subtracted stacks.
 	"""
@@ -84,16 +85,26 @@ def run_cell_segmentation(base_dir, exp_dict_json, start_frame, end_frame,
 				print(f"    -> Segmenting Trench {peak_id}...")
 
 				# --- SEGMENTATION ---
+				# Build kwargs for segment_chnl_stack, only including morph params if provided
+				seg_kwargs = {
+					'OTSU_threshold': otsu_thresh,
+					'first_opening': first_open,
+					'distance_threshold': dist_thresh,
+					'second_opening_size': second_open_size,
+					'min_cell_area': min_area,
+					'max_cell_area': max_area,
+					'small_merge_area_threshold': small_merge_thresh
+				}
+				
+				if first_opening_morph is not None:
+					seg_kwargs['first_opening_morph'] = first_opening_morph
+				if second_opening_morph is not None:
+					seg_kwargs['second_opening_morph'] = second_opening_morph
+				
 				mm_cell_segmentation.segment_chnl_stack(
 					path_to_phase_stack,
 					output_path,
-					OTSU_threshold=otsu_thresh,
-					first_opening=first_open,
-					distance_threshold=dist_thresh,
-					second_opening_size=second_open_size,
-					min_cell_area=min_area,
-					max_cell_area=max_area,
-					small_merge_area_threshold=small_merge_thresh
+					**seg_kwargs
 				)
 
 				# --- VISUAL CONFIRMATION ---
@@ -158,6 +169,12 @@ if __name__ == "__main__":
 	parser.add_argument('--max-cell-area', type=int, default=1000, help="Maximum cell area in pixels. Default: 1000.")
 	parser.add_argument('--small-merge-area-threshold', type=int, default=100,
 						help="Threshold for merging small segmented regions. Default: 100.")
+	
+	# --- Morphological Operation Type Arguments ---
+	parser.add_argument('--first-opening-morph', type=int, choices=[0, 1],
+						help="0 = disk opening, 1 = diagnol default 0.")
+	parser.add_argument('--second-opening-morph', type=int, choices=[0, 1],
+						help="0 = disk opening, 1 = diagnol default 0.")
 
 	args = parser.parse_args()
 
@@ -173,5 +190,7 @@ if __name__ == "__main__":
 		second_open_size=args.second_opening_size,
 		min_area=args.min_cell_area,
 		max_area=args.max_cell_area,
-		small_merge_thresh=args.small_merge_area_threshold
+		small_merge_thresh=args.small_merge_area_threshold,
+		first_opening_morph=args.first_opening_morph,
+		second_opening_morph=args.second_opening_morph
 	)

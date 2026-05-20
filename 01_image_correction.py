@@ -1,10 +1,11 @@
 import argparse
 import os
 from mmtrack import pre_process_mm
+import json
 
 
 def run_image_correction(input_dir, phase_channel_idx,
-						 fast_drift_correction, growth_len, trench_ends_orientation):
+						 fast_drift_correction, growth_len, trench_ends_orientation, pos_list):
 	"""
 	Performs drift correction, image rotation, and channel extraction on raw DuMM TIFF stacks.
 	"""
@@ -16,6 +17,7 @@ def run_image_correction(input_dir, phase_channel_idx,
 		root_dir=input_dir,
 		experiment_name='DuMM',
 		fast4=fast_drift_correction,
+		pos_list = pos_list,
 		c=phase_channel_idx  # Phase channel index
 	)
 	print(f"Drift correction complete. Files path: {drift_corrected_path}")
@@ -83,6 +85,13 @@ if __name__ == "__main__":
 		choices=['up', 'down'],
 		help="Orientation of the closed trench ends ('closed_ends' parameter). Default: 'down'."
 	)
+	parser.add_argument(
+		'--pos-list',
+		required=False,
+		type=str,
+		default='',
+		help="json object to create list of strings defining FOVs to be analyzed Format: ['Pos22', 'Pos23']"
+	)
 
 	args = parser.parse_args()
 	run_image_correction(
@@ -90,5 +99,6 @@ if __name__ == "__main__":
 		phase_channel_idx=args.phase_channel_idx,
 		fast_drift_correction=args.fast_drift_correction,
 		growth_len=args.growth_channel_length,
-		trench_ends_orientation=args.trench_ends_orientation
+		trench_ends_orientation=args.trench_ends_orientation,
+		pos_list=args.pos_list
 	)

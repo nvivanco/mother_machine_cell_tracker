@@ -177,16 +177,20 @@ poetry run python 01_image_correction.py --help
 | `--fast-drift-correction` | `bool` | `True` | Use the fast drift correction method (`fast4`). |
 | `--growth-channel-length` | `int` | `400` | Approx. pixel length for the Mother Machine channel. |
 | `--trench-ends-orientation` | `str` | `'down'` | Orientation of the closed trench ends (`closed_ends` parameter). Choices: `up`, `down`, `none`. |
+| `--pos-list` | `str` | *N/A* | List of positions to be analyzed. Will analyze all in input-dir if none provided. Format is JSON string: `'["Pos21", "Pos22"]'`|
 
 **Example of overriding defaults:**
 
 If your phase channel is index 1 and you are not using the fast drift correction:
 
 ```bash
+# example using 1 position 
+POS_LIST='["Pos21"]'
 poetry run python 01_image_correction.py \
     --input-dir '<path/to/raw/data>' \
     --phase-channel-idx 1 \
-    --fast-drift-correction False
+    --fast-drift-correction False \
+    --pos-list "${POS_LIST}"
 ```
 
 

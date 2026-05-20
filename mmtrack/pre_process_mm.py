@@ -19,6 +19,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 import multiprocessing
 import dask.array as da
+import json
+
 
 
 def subtract_fov_stack(path_to_mm_channels, FOV, empty_stack_id, ana_peak_ids, method = 'phase', channel_index = 0):
@@ -210,76 +212,81 @@ def load_mm_channels(input_dir):
 
 
 def extract_mm_channels(path_to_tcyx_FOVs, chan_w=10, chan_sep=45, crop_wp=10, chan_lp=10, chan_snr=1):
-    # create an output directory for microfluidic_channels
-    path_to_mm_channels = os.path.join(path_to_tcyx_FOVs, 'mm_channels')
-    os.makedirs(path_to_mm_channels, exist_ok=True)
+	# create an output directory for microfluidic_channels
+	path_to_mm_channels = os.path.join(path_to_tcyx_FOVs, 'mm_channels')
+	os.makedirs(path_to_mm_channels, exist_ok=True)
 
-    file_group = org_by_timepoint([path_to_tcyx_FOVs])
+	file_group = org_by_timepoint([path_to_tcyx_FOVs])
 
-    # 1. Get the directory where this script is located
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Navigate UP one level to the project root (..), then DOWN to 'fonts'
-    font_path = os.path.join(script_dir, '..', 'fonts', 'Roboto-Regular.ttf')
+	# 1. Get the directory where this script is located
+	script_dir = os.path.dirname(os.path.abspath(__file__))
+	# Navigate UP one level to the project root (..), then DOWN to 'fonts'
+	font_path = os.path.join(script_dir, '..', 'fonts', 'Roboto-Regular.ttf')
 
-    try:
-        font = ImageFont.truetype(font_path, 15)
-    except IOError:
-        print(f"Warning: Font not found at {font_path}. Falling back to default.")
-        # Need to ensure ImageFont is imported from PIL
-        font = ImageFont.load_default()
+	try:
+		font = ImageFont.truetype(font_path, 15)
+	except IOError:
+		print(f"Warning: Font not found at {font_path}. Falling back to default.")
+		# Need to ensure ImageFont is imported from PIL
+		font = ImageFont.load_default()
+	channels_df_col = ['channel_ID', 'x', 'y', 'cells']
 
-    for position in file_group.keys():
+	for position in file_group.keys():
 
-        file_path = file_group[position]['hyperstacked']['stacked']
-        FOV_stack_tcyx = tifffile.imread(file_path)
-        first_phase_image = FOV_stack_tcyx[0, 0, :, :]
+		file_path = file_group[position]['hyperstacked']['stacked']
+		FOV_stack_tcyx = tifffile.imread(file_path)
+		first_phase_image = FOV_stack_tcyx[0, 0, :, :]
+		channels_df = pd.DataFrame(columns = channels_df_col)
+		
+		chnl_loc_dict = find_channel_locs(first_phase_image, chan_w, chan_sep, crop_wp, chan_snr)
+		image_rows = first_phase_image.shape[0]
+		image_cols = first_phase_image.shape[1]
+		print("channels identified in FOV " + position)
+		consensus_mask, mask_corners_dict = make_consensus_mask(chnl_loc_dict, image_rows,
+																image_cols, crop_wp, chan_lp)
+		masked_image = first_phase_image * consensus_mask
+		# Convert to RGB
+		rgb_img = color.gray2rgb(masked_image, channel_axis=-1)
+		# Convert 32 to 8 bit for PIL
+		scaling_factor = 255 / (np.max(rgb_img) - np.min(rgb_img))
+		scaled_img = (rgb_img - np.min(rgb_img)) * scaling_factor
+		scaled_img = scaled_img.astype(np.uint8)
+		# Convert the masked image to PIL format for text overlay
+		pil_image = Image.fromarray(scaled_img)
+		draw = ImageDraw.Draw(pil_image)
+		fov_text = position
+		draw.text((0, 0), text= fov_text, font=font, fill='red')
 
-        chnl_loc_dict = find_channel_locs(first_phase_image, chan_w, chan_sep, crop_wp, chan_snr)
-        image_rows = first_phase_image.shape[0]
-        image_cols = first_phase_image.shape[1]
-        print("channels identified in FOV " + position)
-        consensus_mask, mask_corners_dict = make_consensus_mask(chnl_loc_dict, image_rows,
-                                                                image_cols, crop_wp, chan_lp)
-        masked_image = first_phase_image * consensus_mask
-        # Convert to RGB
-        rgb_img = color.gray2rgb(masked_image, channel_axis=-1)
-        # Convert 32 to 8 bit for PIL
-        scaling_factor = 255 / (np.max(rgb_img) - np.min(rgb_img))
-        scaled_img = (rgb_img - np.min(rgb_img)) * scaling_factor
-        scaled_img = scaled_img.astype(np.uint8)
-        # Convert the masked image to PIL format for text overlay
-        pil_image = Image.fromarray(scaled_img)
-        draw = ImageDraw.Draw(pil_image)
-        fov_text = position
-        draw.text((0, 0), text= fov_text, font=font, fill='red')
+		for mm_channel in mask_corners_dict.keys():
+			ch_text = str(mm_channel) 
+			x = mask_corners_dict[mm_channel][2]
+			y = mask_corners_dict[mm_channel][1]
+			channels_df.loc[len(channels_df)] = [int(ch_text), int(x), int(y), 0]
+			draw.text((x, y), text=ch_text, font=font, fill='red')
+		final_image = np.array(pil_image)
+		plt.figure()
+		plt.imshow(final_image)
+		plt.title('Channels Identified')
+		plt.axis('off')  # Hide axis labels
+		plt.draw()
 
-        for mm_channel in mask_corners_dict.keys():
-            ch_text = str(mm_channel) 
-            x = mask_corners_dict[mm_channel][2]
-            y = mask_corners_dict[mm_channel][1]
-            draw.text((x, y), text=ch_text, font=font, fill='red')
-        final_image = np.array(pil_image)
-        plt.figure()
-        plt.imshow(final_image)
-        plt.title('Channels Identified')
-        plt.axis('off')  # Hide axis labels
-        plt.draw()
+		filename = f'FOV{position}_mm_channel_mask.tif'
+		path = os.path.join(path_to_mm_channels, filename)
+		tifffile.imwrite(path, final_image)
+		csv_path = path_to_mm_channels + f'FOV{position}.csv' 
+		channels_df.to_csv(csv_path, index=False)
 
-        filename = f'FOV{position}_mm_channel_mask.tif'
-        path = os.path.join(path_to_mm_channels, filename)
-        tifffile.imwrite(path, final_image)
+		print("saving sliced microfluidic channels as tcyx stacks")
+		for trench in mask_corners_dict.keys():
+			y1, y2, x1, x2 = mask_corners_dict[trench]
+			trench_region = FOV_stack_tcyx[:, :, y1:y2, x1:x2]  # assuming image is stacked as tcyx
+			filename = f'FOV{position}_region_{trench}.tif'
+			path = os.path.join(path_to_mm_channels, filename)
+			tifffile.imwrite(path, trench_region)
+			
+	plt.show()
 
-        print("saving sliced microfluidic channels as tcyx stacks")
-        for trench in mask_corners_dict.keys():
-            y1, y2, x1, x2 = mask_corners_dict[trench]
-            trench_region = FOV_stack_tcyx[:, :, y1:y2, x1:x2]  # assuming image is stacked as tcyx
-            filename = f'FOV{position}_region_{trench}.tif'
-            path = os.path.join(path_to_mm_channels, filename)
-            tifffile.imwrite(path, trench_region)
-            
-    plt.show()
-
-    return path_to_mm_channels
+	return path_to_mm_channels
 
 
 def make_consensus_mask(chnl_loc_dict, image_rows, image_cols, crop_wp=10, chan_lp=10):
@@ -566,7 +573,7 @@ def detect_clear_image(image):
         return True
 
 
-def drift_correct(root_dir, experiment_name, fast4, c=0):
+def drift_correct(root_dir, experiment_name, fast4, pos_list, c=0):
 	"""
 	Arg
 	root_dir: parent directory containing multiple 'Pos#' directories,
@@ -579,8 +586,20 @@ def drift_correct(root_dir, experiment_name, fast4, c=0):
 	09/09/25: Added boolean arg fast4. if set to true will run drift correctio using fast4Dreg drift corerection, if set to false 
 	Napari drift correction will be used
 	"""
+	if pos_list:
+		try:
+			positions = json.loads(pos_list)
+			for i in range(len(positions)):
+				pos = positions[i]
+				newpos = f"{root_dir}/{pos}"
+				positions[i] = newpos
+		except json.JSONDecodeError:
+			print("ERROR: Could not parse the position list. Ensure it is valid JSON or that its not empty")
+			return
+	else:
+		positions = False			
 
-	hyperstacked_path, time_dict = hyperstack_tif_tcyx(root_dir, experiment_name, c)
+	hyperstacked_path, time_dict = hyperstack_tif_tcyx(root_dir, experiment_name, positions, c)
 	if fast4 == True:
 		drift_corrected_path = drift_correction_f4ds(hyperstacked_path)
 	else: 
@@ -590,7 +609,7 @@ def drift_correct(root_dir, experiment_name, fast4, c=0):
 	return drift_corrected_path
 
 
-def hyperstack_tif_tcyx(root_dir, experiment_name, c=0):
+def hyperstack_tif_tcyx(root_dir, experiment_name, pos_list, c=0):
 	"""Renames TIFF files without deleting originals.
 	Args:
 	input_dir: parent directory.
@@ -598,6 +617,9 @@ def hyperstack_tif_tcyx(root_dir, experiment_name, c=0):
 	"""
 	root = Path(root_dir)
 	input_dirs = [str(path) for path in root.glob('**//Pos*') if path.is_dir()]
+
+	if pos_list:
+		input_dirs = [pos for pos in input_dirs if pos in pos_list]
 
 	# Create output directory if it doesn't exist
 	# for now don't save renamed files because they take up too much space
